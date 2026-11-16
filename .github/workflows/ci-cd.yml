@@ -1,0 +1,264 @@
+name: CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Nov zagon na PR prekine prejšnjega; namestitve na main se ne prekinjajo.
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+  PRISMA_HIDE_UPDATE_MESSAGE: 'true'
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/rentaj-me-backend
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # prisma.config.js zahteva DATABASE_URL; za generiranje odjemalca povezava ni potrebna.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend – namesti odvisnosti
+        working-directory: backend
+        run: |
+          npm ci
+          npx prisma generate
+
+      - name: Backend – ESLint
+        working-directory: backend
+        run: npm run lint
+
+      - name: Backend – Prettier
+        working-directory: backend
+        run: npm run format:check
+
+      - name: Frontend – namesti odvisnosti
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend – ESLint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Frontend – Prettier
+        working-directory: frontend
+        run: npm run format:check
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend – namesti odvisnosti
+        working-directory: frontend
+        run: npm ci
+
+      # Na GitHub Pages je aplikacija na podpoti /<ime repozitorija>/; backend je na drugem
+      # naslovu (VITE_API_URL, spremenljivka repozitorija).
+      - name: Frontend – build
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+        run: npm run build -- --base="/${{ github.event.repository.name }}/"
+
+      # GitHub Pages ne pozna poti SPA (npr. /katalog), zato ob 404 vrne isto aplikacijo.
+      - name: Frontend – SPA fallback
+        working-directory: frontend
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Docker sloji (tudi npm ci) se predpomnijo v GitHub Actions cache.
+      - name: Backend – build Docker slike
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile.prod
+          tags: ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          outputs: type=docker,dest=${{ runner.temp }}/backend-image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: backend-image
+          path: ${{ runner.temp }}/backend-image.tar
+          retention-days: 7
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      db:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: rentaj
+          POSTGRES_PASSWORD: rentaj
+          POSTGRES_DB: rentaj
+          TZ: Europe/Ljubljana
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rentaj -d rentaj"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://rentaj:rentaj@localhost:5432/rentaj
+      TEST_DATABASE_URL: postgresql://rentaj:rentaj@localhost:5432/rentaj_test
+      JWT_SECRET: ci-testna-skrivnost
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      # @vitest/coverage-v8 se namesti le v CI (--no-save), v različici, ki se ujema z Vitestom.
+      - name: Backend – namesti odvisnosti
+        working-directory: backend
+        run: |
+          npm ci
+          npm install --no-save "@vitest/coverage-v8@$(node -p "require('./node_modules/vitest/package.json').version")"
+          npx prisma generate
+
+      # globalSetup ustvari testno bazo in uveljavi migracije.
+      - name: Backend – testi s pokritostjo
+        working-directory: backend
+        run: npm test -- --coverage
+
+      - name: Frontend – namesti odvisnosti
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: |
+          npm ci
+          npm install --no-save "@vitest/coverage-v8@$(node -p "require('./node_modules/vitest/package.json').version")"
+
+      - name: Frontend – testi s pokritostjo
+        if: ${{ !cancelled() }}
+        working-directory: frontend
+        run: npm test -- --coverage
+
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-backend
+          path: backend/coverage
+          retention-days: 7
+
+      - uses: actions/upload-artifact@v5
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-frontend
+          path: frontend/coverage
+          retention-days: 7
+
+  deploy:
+    name: deploy
+    needs: [lint, build, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ steps.pages.outputs.page_url }}
+    permissions:
+      contents: read
+      packages: write
+      pages: write
+      id-token: write
+
+    steps:
+      # Backend: slika iz joba build → GitHub Container Registry → Render.
+      - uses: actions/download-artifact@v6
+        with:
+          name: backend-image
+          path: ${{ runner.temp }}
+
+      - name: Backend – naloži sliko
+        run: docker load --input "${{ runner.temp }}/backend-image.tar"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backend – objavi sliko v GHCR
+        run: |
+          docker tag "$BACKEND_IMAGE:${{ github.sha }}" "$BACKEND_IMAGE:latest"
+          docker push "$BACKEND_IMAGE:${{ github.sha }}"
+          docker push "$BACKEND_IMAGE:latest"
+
+      # Deploy hook z imgURL namesti točno to sliko. Dokler storitev na Renderju ne obstaja
+      # (prvi zagon), secret ni nastavljen in se korak preskoči.
+      - name: Backend – namesti na Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::warning::RENDER_DEPLOY_HOOK_URL ni nastavljen – namestitev backenda je preskočena."
+            exit 0
+          fi
+          slika=$(jq -rn --arg s "$BACKEND_IMAGE:${{ github.sha }}" '$s|@uri')
+          curl --fail --silent --show-error -X POST "${RENDER_DEPLOY_HOOK_URL}&imgURL=${slika}"
+
+      # Frontend: dist/ iz joba build → GitHub Pages.
+      - uses: actions/download-artifact@v6
+        with:
+          name: frontend-dist
+          path: dist
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+      - name: Frontend – namesti na GitHub Pages
+        id: pages
+        uses: actions/deploy-pages@v4
