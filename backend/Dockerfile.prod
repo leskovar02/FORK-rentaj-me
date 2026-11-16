@@ -1,0 +1,25 @@
+# Produkcijska slika za backend (namestitev na Render). Razvojna slika ostane v Dockerfile.
+FROM node:24-alpine
+
+LABEL org.opencontainers.image.source=https://github.com/leskovar02/FORK-rentaj-me
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PRISMA_HIDE_UPDATE_MESSAGE=true
+
+# Odvisnosti vključno z devDependencies: Prisma CLI je potreben za migracije in seed ob zagonu.
+COPY package.json package-lock.json ./
+RUN npm ci --include=dev
+
+COPY . .
+
+# prisma.config.js zahteva DATABASE_URL; za generiranje odjemalca povezava ni potrebna.
+RUN DATABASE_URL=postgresql://build:build@localhost:5432/build npx prisma generate
+
+USER node
+
+EXPOSE 3000
+
+# Ob zagonu: uveljavi migracije, naloži začetne podatke (idempotentno) in zaženi strežnik.
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run db:seed && npm start"]
