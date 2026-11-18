@@ -25,3 +25,5 @@ export function dovoliIzvor(izvor) {
     next();
   };
 }
+
+const namernaNapaka = 'preverjanje zaščite veje';
