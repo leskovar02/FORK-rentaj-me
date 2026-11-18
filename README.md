@@ -133,3 +133,12 @@ Ob vsakem pull requestu na `main` GitHub Actions poženejo lint, preverjanje obl
 7. [Oblikovanje](docs/07-oblikovanje.md) in [odločitve o oblikovanju](docs/oblikovanje.md) (tokeni, komponente, dostopnost)
 
 Arhitekturne odločitve so zapisane v [docs/adr/](docs/adr/).
+
+## Prevzem projekta
+
+Arhitektura CI/CD je zasnovana na podalagi Render-ja za backend, Neon-ja za podatkovno bazo in GitHub Pages za frontend.
+
+Spletna stran je dostopna [TUAKJ](https://leskovar02.github.io/FORK-rentaj-me/) (https://leskovar02.github.io/FORK-rentaj-me/)
+
+### Padel PR
+![Slika padlega PR](docs\img\failed.png)

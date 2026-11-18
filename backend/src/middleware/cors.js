@@ -25,5 +25,3 @@ export function dovoliIzvor(izvor) {
     next();
   };
 }
-
-const NAMERNA_NAPAKA = 'neuporabljena spremenljivka';
