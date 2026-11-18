@@ -156,11 +156,11 @@ Cevovod [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) (GitHub Act
 
 Arhitekturne odločitve so zapisane v [docs/adr/](docs/adr/).
 
-## Prevzem projekta
+## TL;DR
 
 Arhitektura CI/CD je zasnovana na podalagi Render-ja za backend, Neon-ja za podatkovno bazo in GitHub Pages za frontend.
 
 Spletna stran je dostopna [TUAKJ](https://leskovar02.github.io/FORK-rentaj-me/) (https://leskovar02.github.io/FORK-rentaj-me/)
 
 ### Padel PR
-![Slika padlega PR](docs\img\failed.png)
+![Slika padlega PR](docs/img/failed.png)
