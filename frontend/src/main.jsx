@@ -7,7 +7,8 @@ import ObvestilaProvider from './obvestila/ObvestilaProvider.jsx';
 import { poti } from './poti.jsx';
 import './index.css';
 
-const router = createBrowserRouter(poti);
+// BASE_URL je lokalno '/', na GitHub Pages pa podpot repozitorija (vite build --base).
+const router = createBrowserRouter(poti, { basename: import.meta.env.BASE_URL });
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
