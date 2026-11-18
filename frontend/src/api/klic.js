@@ -1,6 +1,10 @@
 // Osnovna funkcija za klice REST API-ja. Vse funkcije v src/api/ gredo skozi klic(), zato je
 // obravnava napak na enem mestu. Poti so relativne (/api/...) in gredo prek proxyja (ADR-0012).
 
+// V produkciji je backend na drugem naslovu (VITE_API_URL ob buildu). Lokalno je prazen in
+// poti gredo prek proxyja.
+const API_URL = import.meta.env.VITE_API_URL ?? '';
+
 export const SPLOSNA_NAPAKA = 'Prišlo je do napake. Poskusite znova.';
 
 // Dogodek ob 401 sredi dela (posluša ga UporabnikProvider).
@@ -39,7 +43,7 @@ export async function klic(pot, { metoda = 'GET', telo, signal } = {}) {
 
   let odgovor;
   try {
-    odgovor = await fetch(pot, zahteva);
+    odgovor = await fetch(`${API_URL}${pot}`, zahteva);
   } catch (napaka) {
     // Preklic (AbortController) ni napaka za uporabnika – klicatelj ga obravnava sam.
     if (napaka.name === 'AbortError') throw napaka;

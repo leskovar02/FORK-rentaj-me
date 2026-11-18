@@ -15,7 +15,10 @@ export const IME_PISKOTKA = 'zeton';
 // Iste nastavitve morata uporabiti nastavljanje in brisanje piškotka, sicer ga brskalnik ne izbriše.
 export const nastavitvePiskotka = {
   httpOnly: true, // JavaScript v brskalniku žetona ne vidi (zaščita pred XSS)
-  sameSite: 'lax', // piškotek se ne pošlje ob zahtevah z drugih strani (zaščita pred CSRF)
+  // Lokalno 'lax': piškotek se ne pošlje ob zahtevah z drugih strani (zaščita pred CSRF).
+  // V produkciji sta frontend in backend na različnih domenah, zato 'none'; pred CSRF tam
+  // ščiti CORS, ki dovoli le FRONTEND_URL (middleware/cors.js).
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   secure: process.env.NODE_ENV === 'production', // v produkciji samo prek HTTPS
   path: '/',
 };
