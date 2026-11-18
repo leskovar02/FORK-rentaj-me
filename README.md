@@ -1,5 +1,11 @@
 # Rentaj.me
 
+[![CI/CD](https://github.com/leskovar02/FORK-rentaj-me/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/leskovar02/FORK-rentaj-me/actions/workflows/ci-cd.yml)
+
+**Nameščena aplikacija:** <https://leskovar02.github.io/FORK-rentaj-me/> (backend: <https://rentaj-me-api.onrender.com/api/zdravje>)
+
+Prijava je mogoča z [testnimi računi](#testni-računi), npr. `student@rentaj.test` / `student123`. Brezplačni backend na Renderju po 15 minutah nedejavnosti zaspi, zato prva zahteva traja do ene minute.
+
 Spletni sistem za izposojo opreme na oddelku za tehniko.
 
 Študenti, asistenti in profesorji v katalogu poiščejo opremo (mikrokrmilnike, senzorje, merilne instrumente, kamere, VR očala, 3D tiskalnike …), preverijo njeno zasedenost in oddajo rezervacijo. Tehnik oddelka rezervacije odobrava, opremo izdaja in prevzema ter beleži njeno stanje in morebitne poškodbe. Sistem samodejno prikaže zamujena vračila, administrator pa upravlja uporabnike, kategorije opreme in pravila izposoje.
@@ -20,7 +26,7 @@ Spletni sistem za izposojo opreme na oddelku za tehniko.
 ```
 ├── frontend/   # React aplikacija
 ├── backend/    # Express REST API
-├── .github/    # CI (GitHub Actions)
+├── .github/    # CI/CD (GitHub Actions)
 └── docs/       # dokumentacija projekta
 ```
 
@@ -120,7 +126,22 @@ npm run format        # Prettier popravi oblikovanje
 
 Frontend ima enake ukaze (`npm test`, `npm run lint`, `npm run format`) v mapi `frontend/`; testi ne potrebujejo baze.
 
-Ob vsakem pull requestu na `main` GitHub Actions poženejo lint, preverjanje oblikovanja in teste za backend in frontend ter build frontenda.
+## CI/CD cevovod
+
+Cevovod [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml) (GitHub Actions) se zažene ob vsakem pull requestu v `main` in ob vsakem pushu na `main`. Jobi `lint`, `build` in `test` tečejo vzporedno. Vsi trije so obvezne preverbe v zaščiti veje `main`, zato pull requesta s padajočim cevovodom ni mogoče združiti.
+
+| Faza | Kaj naredi |
+|---|---|
+| **lint** | ESLint in Prettier (`npm run lint`, `npm run format:check`) za backend in frontend. Ob kakršnikoli napaki job pade. |
+| **build** | Frontend: `vite build` z naslovom backenda (`VITE_API_URL`) in podpotjo za GitHub Pages; rezultat `dist/` je artefakt `frontend-dist`. Backend: produkcijska Docker slika ([`backend/Dockerfile.prod`](backend/Dockerfile.prod)), shranjena kot artefakt `backend-image`. |
+| **test** | Vitest testi backenda (na bazi PostgreSQL v storitvi CI) in frontenda s poročilom o pokritosti kode; poročili sta artefakta `coverage-backend` in `coverage-frontend`. Ob padlem testu pade cevovod. |
+| **deploy** | Samo ob pushu na `main` in samo, če so `lint`, `build` in `test` uspeli. Uporabi artefakte iz joba `build` (ne gradi ponovno), teče v okolju `production`. Backend sliko objavi v GitHub Container Registry in jo namesti na [Render](https://render.com) (deploy hook), frontend `dist/` pa na GitHub Pages. |
+
+**Predpomnjenje:** `actions/setup-node` predpomni npm cache (`~/.npm`) glede na `package-lock.json`, sloji Docker slike (vključno z `npm ci`) pa se predpomnijo v GitHub Actions cache.
+
+**Namestitev:** frontend je na GitHub Pages, backend kot Docker vsebnik na Renderju, baza PostgreSQL na [Neonu](https://neon.tech). Backend ob zagonu uveljavi migracije in naloži začetne podatke. Frontend kliče backend na naslovu iz `VITE_API_URL` (spremenljivka repozitorija); backend dovoli zahteve le z izvora `FRONTEND_URL` (CORS) in prijavni piškotek v produkciji pošilja s `SameSite=None; Secure`. Skrivnosti (`DATABASE_URL`, `JWT_SECRET`, deploy hook) so v nastavitvah Renderja oziroma v GitHub Secrets okolja `production`, ne v kodi.
+
+> Ker sta frontend in backend na različnih domenah, je prijavni piškotek piškotek tretje osebe. Brskalniki, ki te blokirajo (npr. Safari), prijave ne omogočijo – uporabi Chrome, Firefox ali Edge.
 
 ## Dokumentacija
 
@@ -131,6 +152,7 @@ Ob vsakem pull requestu na `main` GitHub Actions poženejo lint, preverjanje obl
 5. [Uporabniške zgodbe](docs/05-uporabniske-zgodbe.md)
 6. [Wireframes](docs/06-wireframes.md)
 7. [Oblikovanje](docs/07-oblikovanje.md) in [odločitve o oblikovanju](docs/oblikovanje.md) (tokeni, komponente, dostopnost)
+8. [Pregled prevzetega projekta](docs/07-pregled-projekta.md)
 
 Arhitekturne odločitve so zapisane v [docs/adr/](docs/adr/).
 
